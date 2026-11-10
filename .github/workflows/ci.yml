@@ -43,14 +43,23 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Check updater signing availability
+        id: signing
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_WINDOWS_SIGNING_PRIVATE_KEY }}
+        shell: pwsh
+        run: |
+          $enabled = ($env:GITHUB_EVENT_NAME -ne 'pull_request') -and (-not [string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY))
+          "enabled=$($enabled.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+
       - name: Build Tauri app without updater artifacts
-        if: github.event_name == 'pull_request'
+        if: steps.signing.outputs.enabled != 'true'
         working-directory: deecodex-gui
         run: |
-          npx @tauri-apps/cli build --config '{ "bundle": { "createUpdaterArtifacts": false } }'
+          npx @tauri-apps/cli build --bundles nsis --config tauri.windows.conf.json --config '{ "bundle": { "createUpdaterArtifacts": false } }'
 
       - name: Build signed Tauri updater artifacts
-        if: github.event_name != 'pull_request'
+        if: steps.signing.outputs.enabled == 'true'
         working-directory: deecodex-gui
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_WINDOWS_SIGNING_PRIVATE_KEY }}
@@ -59,15 +68,13 @@ jobs:
           if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
             throw "missing TAURI_WINDOWS_SIGNING_PRIVATE_KEY secret"
           }
-          if (-not $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
-            throw "missing TAURI_WINDOWS_SIGNING_PRIVATE_KEY_PASSWORD secret"
-          }
           npx @tauri-apps/cli build --bundles nsis --config tauri.windows.conf.json
 
-      - name: Upload NSIS installer and updater signature
+      - name: Upload NSIS installer and optional updater signature
         uses: actions/upload-artifact@v4
         with:
-          name: deecodex-gui-windows-nsis-updater
+          name: deecodex-gui-windows-nsis
+          if-no-files-found: error
           path: |
             target-local/release/bundle/nsis/*setup.exe
             target-local/release/bundle/nsis/*setup.exe.sig

@@ -254,6 +254,10 @@ pub fn process_is_running(pid: u32) -> bool {
     }
     #[cfg(unix)]
     {
+        // Unix PID 使用有符号整数，溢出值可能被 kill 当作进程组选择器。
+        if pid > i32::MAX as u32 {
+            return false;
+        }
         return std::process::Command::new("kill")
             .arg("-0")
             .arg(pid.to_string())
@@ -475,6 +479,19 @@ mod tests {
         assert!(clear_runtime_endpoint(&dir, 12345).unwrap());
         assert!(!runtime_endpoint_path(&dir).exists());
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn current_process_is_running_and_zero_is_not() {
+        assert!(process_is_running(std::process::id()));
+        assert!(!process_is_running(0));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn overflowing_unix_pids_are_not_running() {
+        assert!(!process_is_running(i32::MAX as u32 + 1));
+        assert!(!process_is_running(u32::MAX));
     }
 
     #[test]
