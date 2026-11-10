@@ -56,7 +56,7 @@ jobs:
         if: steps.signing.outputs.enabled != 'true'
         working-directory: deecodex-gui
         run: |
-          npx @tauri-apps/cli build --bundles nsis --config tauri.windows.conf.json --config '{ "bundle": { "createUpdaterArtifacts": false } }'
+          npx @tauri-apps/cli build --bundles nsis --config tauri.windows.conf.json --config tauri.ci.conf.json
 
       - name: Build signed Tauri updater artifacts
         if: steps.signing.outputs.enabled == 'true'

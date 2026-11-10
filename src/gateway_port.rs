@@ -278,18 +278,14 @@ pub fn process_is_running(pid: u32) -> bool {
             .output()
             .map(|output| {
                 output.status.success()
-                    && String::from_utf8_lossy(&output.stdout)
-                        .lines()
-                        .any(|line| {
-                            // tasklist CSV 首列是 Image Name，第 2 列是 PID：
-                            // 按 CSV 结构判断，不依赖本地化文本（中文 Windows 的
-                            // “没有运行的任务”提示不是 CSV，且编码可能是 GBK）。
-                            let pid_str = pid.to_string();
-                            line.split(',')
-                                .nth(1)
-                                .map(|field| field.trim_matches('"'))
-                                == Some(pid_str.as_str())
-                        })
+                    && String::from_utf8_lossy(&output.stdout).lines().any(|line| {
+                        // tasklist CSV 首列是 Image Name，第 2 列是 PID：
+                        // 按 CSV 结构判断，不依赖本地化文本（中文 Windows 的
+                        // “没有运行的任务”提示不是 CSV，且编码可能是 GBK）。
+                        let pid_str = pid.to_string();
+                        line.split(',').nth(1).map(|field| field.trim_matches('"'))
+                            == Some(pid_str.as_str())
+                    })
             })
             .unwrap_or(false);
     }
@@ -358,15 +354,23 @@ mod tests {
 
     #[tokio::test]
     async fn binds_preferred_port_when_available() {
-        let probe = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
-        let port = probe.local_addr().unwrap().port();
-        drop(probe);
+        // 释放探测端口后，其他并行测试可能抢先绑定；只对这种情况重新选端口。
+        for _ in 0..16 {
+            let probe = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+            let port = probe.local_addr().unwrap().port();
+            drop(probe);
 
-        let bound = bind_gateway("127.0.0.1", port, true).await.unwrap();
+            let bound = bind_gateway("127.0.0.1", port, true).await.unwrap();
+            if bound.auto_selected() {
+                continue;
+            }
 
-        assert_eq!(bound.port, port);
-        assert!(!bound.auto_selected());
-        assert_eq!(bound.attempted_ports, vec![port]);
+            assert_eq!(bound.port, port);
+            assert_eq!(bound.listener.local_addr().unwrap().port(), port);
+            assert_eq!(bound.attempted_ports, vec![port]);
+            return;
+        }
+        panic!("连续 16 次未能绑定探测端口");
     }
 
     #[tokio::test]
